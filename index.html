@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>城堡公主救援 - 终极版</title>
+<style>
+body { margin:0; font-family:sans-serif; background:#222; color:white; text-align:center; overflow:hidden;}
+#startScreen { position:fixed; top:0; left:0; width:100%; height:100%; background:#333; display:flex; flex-direction:column; justify-content:center; align-items:center; animation:fadeIn 2s;}
+#startScreen h1 { font-size:48px; margin-bottom:20px; }
+#startScreen p { font-size:20px; margin:10px 0; max-width:80%; }
+#startScreen button { padding:10px 20px; font-size:24px; cursor:pointer; margin-top:20px; }
+#gameContainer { display:none; }
+#info { text-align:center; margin-top:10px; font-size:18px;}
+#joystick { position:fixed; bottom:20px; left:20px; width:100px; height:100px; background:rgba(255,255,255,0.2); border-radius:50%; touch-action:none;}
+#miniMap { position:fixed; top:20px; right:20px; width:150px; height:150px; background:rgba(0,0,0,0.5); border:2px solid white;}
+#story { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.85); padding:20px; border-radius:10px; display:none; text-align:center;}
+#story button { margin-top:10px; padding:5px 10px; }
+canvas { display:block; margin:0 auto; background:#444; touch-action:none;}
+@keyframes fadeIn { from{opacity:0} to{opacity:1}}
+</style>
+</head>
+<body>
+
+<!-- 开始界面 -->
+<div id="startScreen">
+    <h1>城堡公主救援</h1>
+    <p>玩法说明：</p>
+    <p>在限定时间内躲避怪物，收集能量水和钥匙，解锁大门救出公主。</p>
+    <p>电脑玩家使用 W/A/S/D 或箭头键操作，手机玩家使用左下角虚拟摇杆移动。</p>
+    <button onclick="startGame()">开始游戏</button>
+</div>
+
+<!-- 游戏界面 -->
+<div id="gameContainer">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="info">关卡: <span id="level">1</span> | 时间: <span id="timer">60</span> 秒 | 血量: <span id="health">3</span></div>
+    <div id="joystick"></div>
+    <canvas id="miniMap" width="150" height="150"></canvas>
+    <div id="story">
+        <div id="storyText"></div>
+        <button onclick="startLevel()">继续</button>
+    </div>
+</div>
+
+<!-- 音效 -->
+<audio id="bgMusic" loop src="https://cdn.pixabay.com/download/audio/2021/08/04/audio_29e1f64a7a.mp3?filename=adventure-11258.mp3"></audio>
+<audio id="collectSound" src="https://freesound.org/data/previews/331/331912_3248244-lq.mp3"></audio>
+<audio id="hitSound" src="https://freesound.org/data/previews/82/82921_1022650-lq.mp3"></audio>
+<audio id="winSound" src="https://freesound.org/data/previews/146/146726_2615112-lq.mp3"></audio>
+
+<script>
+const canvas=document.getElementById('gameCanvas');
+const ctx=canvas.getContext('2d');
+const miniMapCanvas=document.getElementById('miniMap');
+const miniCtx=miniMapCanvas.getContext('2d');
+
+const bgMusic=document.getElementById('bgMusic');
+const collectSound=document.getElementById('collectSound');
+const hitSound=document.getElementById('hitSound');
+const winSound=document.getElementById('winSound');
+
+bgMusic.volume=0.2; bgMusic.play();
+
+let level=1, maxLevel=5, timeLeft=60;
+const player={x:50,y:50,size:40,color:'blue',health:3,dx:0,dy:0};
+let door, energyWaters, monsters, walls, keys;
+
+const storyTextArr=[
+    "关卡1: 初入城堡，躲避怪物并收集能量水。",
+    "关卡2: 大厅怪物增多，收集钥匙解锁门。",
+    "关卡3: 迷宫走廊，怪物追踪更快。",
+    "关卡4: 塔楼防御，怪物数量增加，有陷阱。",
+    "关卡5: 公主房间外，最终解锁公主完成任务。"
+];
+
+// 开始游戏
+function startGame() {
+    document.getElementById('startScreen').style.display='none';
+    document.getElementById('gameContainer').style.display='block';
+    initLevel(level);
+}
+
+// 初始化关卡
+function initLevel(lv){
+    document.getElementById('level').textContent=lv;
+    timeLeft=60+lv*10;
+    player.x=50; player.y=50; player.health=3;
+
+    door={x:700,y:500,size:60,color:'gold'};
+    keys=[{x:400,y:100,size:20,color:'orange'}];
+    energyWaters=[{x:200,y:150,size:20,color:'cyan'},{x:500,y:300,size:20,color:'cyan'}];
+    walls=[{x:300,y:200,w:200,h:20},{x:100,y:400,w:20,h:150}];
+    monsters=[];
+    for(let i=0;i<lv+1;i++){
+        monsters.push({x:Math.random()*700+50, y:Math.random()*500+50, size:40, color:'red', speed:2+lv});
+    }
+    showStory();
+}
+
+// 显示剧情
+function showStory(){
+    document.getElementById('storyText').textContent=storyTextArr[level-1];
+    document.getElementById('story').style.display='block';
+}
+
+// 开始关卡
+function startLevel(){ document.getElementById('story').style.display='none'; }
+
+// 键盘控制
+let keysDown={};
+document.addEventListener('keydown', e=>keysDown[e.key]=true);
+document.addEventListener('keyup', e=>keysDown[e.key]=false);
+
+// 手机摇杆
+const joystick=document.getElementById('joystick');
+let touchStart=null;
+joystick.addEventListener('touchstart', e=>{e.preventDefault(); touchStart=e.touches[0];});
+joystick.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    const touch=e.touches[0];
+    const dx=touch.clientX-touchStart.clientX;
+    const dy=touch.clientY-touchStart.clientY;
+    player.dx=Math.max(-1,Math.min(1,dx/50))*4;
+    player.dy=Math.max(-1,Math.min(1,dy/50))*4;
+});
+joystick.addEventListener('touchend', e=>{player.dx=0; player.dy=0;});
+
+// 游戏循环
+function update(){
+    if(keysDown['ArrowUp']||keysDown['w']) player.y-=4;
+    if(keysDown['ArrowDown']||keysDown['s']) player.y+=4;
+    if(keysDown['ArrowLeft']||keysDown['a']) player.x-=4;
+    if(keysDown['ArrowRight']||keysDown['d']) player.x+=4;
+    player.x+=player.dx; player.y+=player.dy;
+    player.x=Math.max(0,Math.min(canvas.width-player.size,player.x));
+    player.y=Math.max(0,Math.min(canvas.height-player.size,player.y));
+
+    // 怪物追踪
+    monsters.forEach(m=>{
+        const dirX=player.x-m.x; const dirY=player.y-m.y;
+        const dist=Math.sqrt(dirX*dirX+dirY*dirY);
+        if(dist>0){ m.x+=m.speed*dirX/dist; m.y+=m.speed*dirY/dist;}
+        if(collide(player,m)){ player.health--; hitSound.play(); player.x=50; player.y=50;}
+    });
+
+    // 收集道具
+    energyWaters.forEach((e,i)=>{ if(collide(player,e)){timeLeft+=5; collectSound.play(); energyWaters.splice(i,1);}});
+    keys.forEach((k,i)=>{ if(collide(player,k)){ collectSound.play(); keys.splice(i,1);}});
+
+    // 到达大门
+    if(keys.length===0 && collide(player,door)){
+        winSound.play();
+        if(level<maxLevel){ level++; initLevel(level);} 
+        else { alert("你成功救出了公主！🎉"); level=1; initLevel(level);}
+    }
+
+    timeLeft-=1/60;
+    if(timeLeft<=0 || player.health<=0){ alert("失败！未能及时救出公主😭"); level=1; initLevel(level);}
+
+    draw(); drawMiniMap();
+    requestAnimationFrame(update);
+}
+
+// 绘制
+function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    walls.forEach(w=>{ctx.fillStyle='gray'; ctx.fillRect(w.x,w.y,w.w,w.h);});
+    ctx.fillStyle=player.color; ctx.fillRect(player.x,player.y,player.size,player.size);
+    monsters.forEach(m=>{ ctx.fillStyle=m.color; ctx.fillRect(m.x,m.y,m.size,m.size); });
+    energyWaters.forEach(e=>{ ctx.fillStyle=e.color; ctx.fillRect(e.x,e.y,e.size,e.size);});
+    keys.forEach(k=>{ ctx.fillStyle=k.color; ctx.fillRect(k.x,k.y,k.size,k.size);});
+    ctx.fillStyle=door.color; ctx.fillRect(door.x,door.y,door.size,door.size);
+    document.getElementById('timer').textContent=Math.floor(timeLeft);
+    document.getElementById('health').textContent=player.health;
+}
+
+// 迷你地图
+function drawMiniMap(){
+    miniCtx.clearRect(0,0,150,150);
+    const scaleX=150/canvas.width, scaleY=150/canvas.height;
+    miniCtx.fillStyle='blue'; miniCtx.fillRect(player.x*scaleX,player.y*scaleY,player.size*scaleX,player.size*scaleY);
+    miniCtx.fillStyle='gold'; miniCtx.fillRect(door.x*scaleX,door.y*scaleY,door.size*scaleX,door.size*scaleY);
+    monsters.forEach(m=>{ miniCtx.fillStyle='red'; miniCtx.fillRect(m.x*scaleX,m.y*scaleY,m.size*scaleX,m.size*scaleY); });
+    energyWaters.forEach(e=>{ miniCtx.fillStyle='cyan'; miniCtx.fillRect(e.x*scaleX,e.y*scaleY,e.size*scaleX,e.size*scaleY); });
+    keys.forEach(k=>{ miniCtx.fillStyle='orange'; miniCtx.fillRect(k.x*scaleX,k.y*scaleY,k.size*scaleX,k.size*scaleY); });
+}
+
+// 碰撞
+function collide(a,b){ return a.x<b.x+b.size && a.x+a.size>b.x && a.y<b.y+b.size && a.y+a.size>b.y; }
+
+update();
+</script>
+
+</body>
+</html>
