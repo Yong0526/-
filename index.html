@@ -2,194 +2,300 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>城堡公主救援 - 终极版</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>城堡公主救援 - 完整闪光版</title>
 <style>
-body { margin:0; font-family:sans-serif; background:#222; color:white; text-align:center; overflow:hidden;}
-#startScreen { position:fixed; top:0; left:0; width:100%; height:100%; background:#333; display:flex; flex-direction:column; justify-content:center; align-items:center; animation:fadeIn 2s;}
-#startScreen h1 { font-size:48px; margin-bottom:20px; }
-#startScreen p { font-size:20px; margin:10px 0; max-width:80%; }
-#startScreen button { padding:10px 20px; font-size:24px; cursor:pointer; margin-top:20px; }
-#gameContainer { display:none; }
-#info { text-align:center; margin-top:10px; font-size:18px;}
-#joystick { position:fixed; bottom:20px; left:20px; width:100px; height:100px; background:rgba(255,255,255,0.2); border-radius:50%; touch-action:none;}
-#miniMap { position:fixed; top:20px; right:20px; width:150px; height:150px; background:rgba(0,0,0,0.5); border:2px solid white;}
-#story { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.85); padding:20px; border-radius:10px; display:none; text-align:center;}
-#story button { margin-top:10px; padding:5px 10px; }
-canvas { display:block; margin:0 auto; background:#444; touch-action:none;}
-@keyframes fadeIn { from{opacity:0} to{opacity:1}}
+body { margin:0; font-family:sans-serif; background:#222; text-align:center; overflow:hidden; }
+canvas { display:block; margin:0 auto; touch-action:none; border-radius:12px; background:linear-gradient(#88cc55,#339933); }
+#controls { margin-top:10px; display:flex; flex-direction:column; align-items:center; }
+.row { display:flex; justify-content:center; }
+button { width:80px; height:80px; margin:5px; font-size:28px; border-radius:40px; background:linear-gradient(#666,#444); color:white; border:none; box-shadow:0 5px #222; }
+button:active { box-shadow:0 2px #222; transform: translateY(3px); }
+#startScreen, #endScreen { position:fixed; top:0; left:0; width:100%; height:100%; background: linear-gradient(#222,#111); display:flex; flex-direction:column; justify-content:center; align-items:center; opacity:1; transition: opacity 0.5s; }
+#startScreen h1, #endScreen h1 { margin-bottom:20px; color:#ffd700; text-shadow:2px 2px #000; }
+#progressContainer { width:90%; height:20px; background:#444; border-radius:10px; margin:5px auto; display:none; overflow:hidden; }
+#progressBar { height:100%; width:0%; background: linear-gradient(90deg, gold, orange, gold); border-radius:10px; transition: width 0.2s; }
 </style>
 </head>
 <body>
 
-<!-- 开始界面 -->
 <div id="startScreen">
-    <h1>城堡公主救援</h1>
-    <p>玩法说明：</p>
-    <p>在限定时间内躲避怪物，收集能量水和钥匙，解锁大门救出公主。</p>
-    <p>电脑玩家使用 W/A/S/D 或箭头键操作，手机玩家使用左下角虚拟摇杆移动。</p>
-    <button onclick="startGame()">开始游戏</button>
+  <h1>城堡公主救援</h1>
+  <button onclick="startGame()">开始游戏</button>
 </div>
 
-<!-- 游戏界面 -->
-<div id="gameContainer">
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div id="info">关卡: <span id="level">1</span> | 时间: <span id="timer">60</span> 秒 | 血量: <span id="health">3</span></div>
-    <div id="joystick"></div>
-    <canvas id="miniMap" width="150" height="150"></canvas>
-    <div id="story">
-        <div id="storyText"></div>
-        <button onclick="startLevel()">继续</button>
-    </div>
+<div id="endScreen" style="display:none;">
+  <h1 id="endMessage"></h1>
+  <button onclick="restartGame()">重玩</button>
 </div>
 
-<!-- 音效 -->
-<audio id="bgMusic" loop src="https://cdn.pixabay.com/download/audio/2021/08/04/audio_29e1f64a7a.mp3?filename=adventure-11258.mp3"></audio>
-<audio id="collectSound" src="https://freesound.org/data/previews/331/331912_3248244-lq.mp3"></audio>
-<audio id="hitSound" src="https://freesound.org/data/previews/82/82921_1022650-lq.mp3"></audio>
-<audio id="winSound" src="https://freesound.org/data/previews/146/146726_2615112-lq.mp3"></audio>
+<div id="progressContainer">
+  <div id="progressBar"></div>
+</div>
+
+<canvas id="gameCanvas" width="540" height="540" style="display:none;"></canvas>
+
+<div id="controls" style="display:none;">
+  <div class="row"><button onmousedown="move('up',true)" onmouseup="stopMove()">↑</button></div>
+  <div class="row">
+    <button onmousedown="move('left',true)" onmouseup="stopMove()">←</button>
+    <button onmousedown="move('down',true)" onmouseup="stopMove()">↓</button>
+    <button onmousedown="move('right',true)" onmouseup="stopMove()">→</button>
+  </div>
+</div>
 
 <script>
-const canvas=document.getElementById('gameCanvas');
-const ctx=canvas.getContext('2d');
-const miniMapCanvas=document.getElementById('miniMap');
-const miniCtx=miniMapCanvas.getContext('2d');
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const tileSize = 36;
+const rows = 15;
+const cols = 15;
+const keyCount = 3;
 
-const bgMusic=document.getElementById('bgMusic');
-const collectSound=document.getElementById('collectSound');
-const hitSound=document.getElementById('hitSound');
-const winSound=document.getElementById('winSound');
+let player, targetPos, animating, monsters, map, gameOver, keysCollected, keyEffect, moveDir, moveInterval, life;
+let speed = 0.3;
+let trapTiles = [];
+let trapInterval = null;
 
-bgMusic.volume=0.2; bgMusic.play();
-
-let level=1, maxLevel=5, timeLeft=60;
-const player={x:50,y:50,size:40,color:'blue',health:3,dx:0,dy:0};
-let door, energyWaters, monsters, walls, keys;
-
-const storyTextArr=[
-    "关卡1: 初入城堡，躲避怪物并收集能量水。",
-    "关卡2: 大厅怪物增多，收集钥匙解锁门。",
-    "关卡3: 迷宫走廊，怪物追踪更快。",
-    "关卡4: 塔楼防御，怪物数量增加，有陷阱。",
-    "关卡5: 公主房间外，最终解锁公主完成任务。"
+// 围栏布局
+let fencePositions = [
+  ...Array.from({length:cols},(_,i)=>[[i,0],[i,14]]).flat(),
+  ...Array.from({length:rows-2},(_,j)=>[[0,j+1],[14,j+1]]).flat(),
+  [3,2],[4,2],[5,2],[3,4],[4,4],[5,4],
+  [6,6],[7,6],[8,6],[6,8],[7,8],[8,8],
+  [10,3],[11,3],[12,3],[10,5],[11,5],[12,5],
+  [9,10],[10,10],[11,10],[9,12],[10,12],[11,12]
 ];
 
-// 开始游戏
-function startGame() {
-    document.getElementById('startScreen').style.display='none';
-    document.getElementById('gameContainer').style.display='block';
-    initLevel(level);
+const openPaths = [
+  [0,0],[1,0],[0,1],[1,1],
+  [2,3],[3,3],[2,4],[3,4],
+  [5,10],[5,11],[6,10],[6,11],
+  [12,4],[12,5],[13,4],[13,5],
+  [13,14],[12,14],[13,13],[12,13]
+];
+openPaths.forEach(pos=>{ fencePositions = fencePositions.filter(f=>!(f[0]==pos[0] && f[1]==pos[1])); });
+
+// 初始化游戏
+function initGame(){
+  map = Array.from({length:rows},()=>Array(cols).fill(0));
+  fencePositions.forEach(pos=>{ map[pos[1]][pos[0]] = 1; });
+  map[2][3]=4; map[5][10]=4; map[12][4]=4;
+  map[13][14]=5;
+  player={x:0,y:0}; targetPos={x:0,y:0}; animating=false;
+  monsters=[{x:cols-3,y:2},{x:cols-5,y:rows-5},{x:2,y:rows-3}];
+  gameOver=false; keysCollected=0; keyEffect=null; moveDir=null; if(moveInterval) clearInterval(moveInterval);
+  life=3; trapTiles=[];
+
+  if(trapInterval) clearInterval(trapInterval);
+  trapInterval = setInterval(generateTraps,5000);
 }
 
-// 初始化关卡
-function initLevel(lv){
-    document.getElementById('level').textContent=lv;
-    timeLeft=60+lv*10;
-    player.x=50; player.y=50; player.health=3;
-
-    door={x:700,y:500,size:60,color:'gold'};
-    keys=[{x:400,y:100,size:20,color:'orange'}];
-    energyWaters=[{x:200,y:150,size:20,color:'cyan'},{x:500,y:300,size:20,color:'cyan'}];
-    walls=[{x:300,y:200,w:200,h:20},{x:100,y:400,w:20,h:150}];
-    monsters=[];
-    for(let i=0;i<lv+1;i++){
-        monsters.push({x:Math.random()*700+50, y:Math.random()*500+50, size:40, color:'red', speed:2+lv});
+function generateTraps(){
+  if(gameOver) return;
+  trapTiles.forEach(([x,y])=>{ if(map[y][x]===6) map[y][x]=0; });
+  trapTiles=[];
+  let emptyTiles=[];
+  for(let y=1;y<rows-1;y++){
+    for(let x=1;x<cols-1;x++){
+      if(map[y][x]===0 && !(Math.abs(x-13)<=1 && Math.abs(y-14)<=1)){
+        emptyTiles.push([x,y]);
+      }
     }
-    showStory();
+  }
+  const trapCount = Math.min(3, emptyTiles.length);
+  for(let i=0;i<trapCount;i++){
+    const idx=Math.floor(Math.random()*emptyTiles.length);
+    const [rx,ry] = emptyTiles.splice(idx,1)[0];
+    map[ry][rx]=6; trapTiles.push([rx,ry]);
+  }
 }
 
-// 显示剧情
-function showStory(){
-    document.getElementById('storyText').textContent=storyTextArr[level-1];
-    document.getElementById('story').style.display='block';
-}
-
-// 开始关卡
-function startLevel(){ document.getElementById('story').style.display='none'; }
-
-// 键盘控制
-let keysDown={};
-document.addEventListener('keydown', e=>keysDown[e.key]=true);
-document.addEventListener('keyup', e=>keysDown[e.key]=false);
-
-// 手机摇杆
-const joystick=document.getElementById('joystick');
-let touchStart=null;
-joystick.addEventListener('touchstart', e=>{e.preventDefault(); touchStart=e.touches[0];});
-joystick.addEventListener('touchmove', e=>{
-    e.preventDefault();
-    const touch=e.touches[0];
-    const dx=touch.clientX-touchStart.clientX;
-    const dy=touch.clientY-touchStart.clientY;
-    player.dx=Math.max(-1,Math.min(1,dx/50))*4;
-    player.dy=Math.max(-1,Math.min(1,dy/50))*4;
-});
-joystick.addEventListener('touchend', e=>{player.dx=0; player.dy=0;});
-
-// 游戏循环
-function update(){
-    if(keysDown['ArrowUp']||keysDown['w']) player.y-=4;
-    if(keysDown['ArrowDown']||keysDown['s']) player.y+=4;
-    if(keysDown['ArrowLeft']||keysDown['a']) player.x-=4;
-    if(keysDown['ArrowRight']||keysDown['d']) player.x+=4;
-    player.x+=player.dx; player.y+=player.dy;
-    player.x=Math.max(0,Math.min(canvas.width-player.size,player.x));
-    player.y=Math.max(0,Math.min(canvas.height-player.size,player.y));
-
-    // 怪物追踪
-    monsters.forEach(m=>{
-        const dirX=player.x-m.x; const dirY=player.y-m.y;
-        const dist=Math.sqrt(dirX*dirX+dirY*dirY);
-        if(dist>0){ m.x+=m.speed*dirX/dist; m.y+=m.speed*dirY/dist;}
-        if(collide(player,m)){ player.health--; hitSound.play(); player.x=50; player.y=50;}
-    });
-
-    // 收集道具
-    energyWaters.forEach((e,i)=>{ if(collide(player,e)){timeLeft+=5; collectSound.play(); energyWaters.splice(i,1);}});
-    keys.forEach((k,i)=>{ if(collide(player,k)){ collectSound.play(); keys.splice(i,1);}});
-
-    // 到达大门
-    if(keys.length===0 && collide(player,door)){
-        winSound.play();
-        if(level<maxLevel){ level++; initLevel(level);} 
-        else { alert("你成功救出了公主！🎉"); level=1; initLevel(level);}
+// 绘制地图
+function drawGround(){
+  for(let y=0;y<rows;y++){
+    for(let x=0;x<cols;x++){
+      ctx.fillStyle="#33aa33"; ctx.fillRect(x*tileSize,y*tileSize,tileSize,tileSize);
+      if(map[y][x]==1){
+        const grad = ctx.createLinearGradient(x*tileSize,y*tileSize,x*tileSize+tileSize,y*tileSize+tileSize);
+        grad.addColorStop(0,"#996633"); grad.addColorStop(1,"#553311");
+        ctx.fillStyle=grad; ctx.fillRect(x*tileSize,y*tileSize,tileSize,tileSize);
+      }
     }
-
-    timeLeft-=1/60;
-    if(timeLeft<=0 || player.health<=0){ alert("失败！未能及时救出公主😭"); level=1; initLevel(level);}
-
-    draw(); drawMiniMap();
-    requestAnimationFrame(update);
+  }
 }
 
-// 绘制
-function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    walls.forEach(w=>{ctx.fillStyle='gray'; ctx.fillRect(w.x,w.y,w.w,w.h);});
-    ctx.fillStyle=player.color; ctx.fillRect(player.x,player.y,player.size,player.size);
-    monsters.forEach(m=>{ ctx.fillStyle=m.color; ctx.fillRect(m.x,m.y,m.size,m.size); });
-    energyWaters.forEach(e=>{ ctx.fillStyle=e.color; ctx.fillRect(e.x,e.y,e.size,e.size);});
-    keys.forEach(k=>{ ctx.fillStyle=k.color; ctx.fillRect(k.x,k.y,k.size,k.size);});
-    ctx.fillStyle=door.color; ctx.fillRect(door.x,door.y,door.size,door.size);
-    document.getElementById('timer').textContent=Math.floor(timeLeft);
-    document.getElementById('health').textContent=player.health;
+// 玩家
+function drawPlayer(x,y){
+  const px = x*tileSize + tileSize/2, py = y*tileSize + tileSize/2;
+  ctx.fillStyle="#3399ff"; ctx.fillRect(px-6,py-6,12,16);
+  ctx.beginPath(); ctx.arc(px,py-10,6,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle="#3399ff"; ctx.lineWidth=2; ctx.beginPath();
+  ctx.moveTo(px-6,py); ctx.lineTo(px-12,py+6);
+  ctx.moveTo(px+6,py); ctx.lineTo(px+12,py+6);
+  ctx.moveTo(px-3,py+10); ctx.lineTo(px-3,py+16);
+  ctx.moveTo(px+3,py+10); ctx.lineTo(px+3,py+16);
+  ctx.stroke();
 }
 
-// 迷你地图
+// 怪物
+function drawMonster(m){
+  const px=m.x*tileSize+tileSize/2, py=m.y*tileSize+tileSize/2;
+  ctx.fillStyle="#ff4444"; ctx.fillRect(px-8,py-8,16,16);
+  ctx.beginPath(); ctx.arc(px,py-10,6,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="#fff";
+  ctx.beginPath(); ctx.arc(px-2,py-10,2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(px+2,py-10,2,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle="#ff4444"; ctx.lineWidth=2; ctx.beginPath();
+  ctx.moveTo(px-8,py); ctx.lineTo(px-12,py+6);
+  ctx.moveTo(px+8,py); ctx.lineTo(px+12,py+6);
+  ctx.moveTo(px-4,py+8); ctx.lineTo(px-4,py+16);
+  ctx.moveTo(px+4,py+8); ctx.lineTo(px+4,py+16); ctx.stroke();
+}
+
+// 钥匙
+function drawKey(x,y){ const px=x*tileSize+tileSize/2,py=y*tileSize+tileSize/2;
+ctx.strokeStyle="gold"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(px,py,5,0,Math.PI*2); ctx.stroke(); }
+
+// 公主
+function drawPrincess(x,y){ const px=x*tileSize+tileSize/2, py=y*tileSize+tileSize/2 - Math.sin(Date.now()/300)*4;
+ctx.fillStyle="pink"; ctx.beginPath(); ctx.arc(px,py-12,6,0,Math.PI*2); ctx.fill(); }
+
+// 漩涡
+function drawTrap(x,y){ const px=x*tileSize+tileSize/2, py=y*tileSize+tileSize/2, time=Date.now()/150;
+ctx.save(); ctx.translate(px,py); ctx.rotate(time%(Math.PI*2));
+for(let i=0;i<3;i++){ ctx.beginPath(); ctx.arc(0,0, tileSize/2 - i*8, 0, Math.PI*1.5);
+ctx.strokeStyle=`hsla(${(time*50+i*120)%360},100%,70%,0.7)`; ctx.lineWidth=3; ctx.stroke(); }
+ctx.restore(); }
+
+// 钥匙特效
+function drawKeyEffect(){ if(keyEffect){ ctx.fillStyle=`rgba(255,215,0,${keyEffect.alpha})`;
+ctx.beginPath(); ctx.arc(keyEffect.x*tileSize+tileSize/2, keyEffect.y*tileSize+tileSize/2-10-keyEffect.offset,10,0,Math.PI*2); ctx.fill();
+keyEffect.alpha-=0.05; keyEffect.offset+=1; if(keyEffect.alpha<=0) keyEffect=null; } }
+
+// 小地图
 function drawMiniMap(){
-    miniCtx.clearRect(0,0,150,150);
-    const scaleX=150/canvas.width, scaleY=150/canvas.height;
-    miniCtx.fillStyle='blue'; miniCtx.fillRect(player.x*scaleX,player.y*scaleY,player.size*scaleX,player.size*scaleY);
-    miniCtx.fillStyle='gold'; miniCtx.fillRect(door.x*scaleX,door.y*scaleY,door.size*scaleX,door.size*scaleY);
-    monsters.forEach(m=>{ miniCtx.fillStyle='red'; miniCtx.fillRect(m.x*scaleX,m.y*scaleY,m.size*scaleX,m.size*scaleY); });
-    energyWaters.forEach(e=>{ miniCtx.fillStyle='cyan'; miniCtx.fillRect(e.x*scaleX,e.y*scaleY,e.size*scaleX,e.size*scaleY); });
-    keys.forEach(k=>{ miniCtx.fillStyle='orange'; miniCtx.fillRect(k.x*scaleX,k.y*scaleY,k.size*scaleX,k.size*scaleY); });
+  const miniSize=120, miniTile=miniSize/cols, miniX=canvas.width-miniSize-5, miniY=5;
+  ctx.fillStyle="rgba(0,0,0,0.5)"; ctx.fillRect(miniX-2,miniY-2,miniSize+4,miniSize+4);
+  for(let y=0;y<rows;y++){ for(let x=0;x<cols;x++){
+    let tile=map[y][x]; switch(tile){ case 1: ctx.fillStyle="#333"; break; case 4: ctx.fillStyle="gold"; break;
+    case 5: ctx.fillStyle="pink"; break; case 6: ctx.fillStyle="purple"; break; default: ctx.fillStyle="#66aa66"; break; }
+    ctx.beginPath(); ctx.arc(miniX+x*miniTile+miniTile/2, miniY+y*miniTile+miniTile/2, miniTile/2-1,0,2*Math.PI); ctx.fill();
+  } }
+  ctx.fillStyle="blue"; ctx.beginPath();
+  ctx.arc(miniX+player.x*miniTile+miniTile/2, miniY+player.y*miniTile+miniTile/2, miniTile/2-1,0,2*Math.PI); ctx.fill();
+  ctx.fillStyle="red"; monsters.forEach(m=>{ ctx.beginPath();
+    ctx.arc(miniX+m.x*miniTile+miniTile/2, miniY+m.y*miniTile+miniTile/2, miniTile/2-1,0,2*Math.PI); ctx.fill();
+  });
 }
 
-// 碰撞
-function collide(a,b){ return a.x<b.x+b.size && a.x+a.size>b.x && a.y<b.y+b.size && a.y+a.size>b.y; }
+// 玩家更新
+function updatePlayer(){
+  if(animating){
+    let dx = targetPos.x - player.x, dy = targetPos.y - player.y;
+    player.x += dx*speed; player.y += dy*speed;
+    // 漩涡吸引
+    for(let [x,y] of trapTiles){
+      let distX=x-player.x, distY=y-player.y, dist=Math.sqrt(distX*distX+distY*distY);
+      if(dist<2){ player.x+=distX*0.05; player.y+=distY*0.05; }
+    }
+    if(Math.abs(dx)<0.05 && Math.abs(dy)<0.05){ player.x=targetPos.x; player.y=targetPos.y; animating=false; checkTile(); }
+  }
+}
 
-update();
+// 绘制全部
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawGround();
+  for(let y=0;y<rows;y++){ for(let x=0;x<cols;x++){
+    if(map[y][x]==4) drawKey(x,y);
+    if(map[y][x]==5) drawPrincess(x,y);
+    if(map[y][x]==6) drawTrap(x,y);
+  } }
+  monsters.forEach(drawMonster); updatePlayer(); drawPlayer(player.x,player.y);
+  drawKeyEffect();
+  ctx.fillStyle="white"; ctx.font="16px sans-serif";
+  ctx.fillText("钥匙:"+keysCollected+"/"+keyCount,10,20);
+  ctx.fillText("生命:"+life,10,40);
+  drawMiniMap();
+  document.getElementById('progressBar').style.width = Math.min(keysCollected/keyCount*100,100) + "%";
+  requestAnimationFrame(draw);
+}
+
+// 玩家移动
+function move(dir,longPress=false){ if(gameOver) return;
+  if(longPress){ moveDir=dir; if(moveInterval) clearInterval(moveInterval); moveInterval=setInterval(()=>moveStep(moveDir),100); }
+  else moveStep(dir);
+}
+function moveStep(dir){
+  if(animating || gameOver) return;
+  let nx=player.x, ny=player.y;
+  if(dir=="up") ny--; if(dir=="down") ny++; if(dir=="left") nx--; if(dir=="right") nx++;
+  if(nx<0||nx>=cols||ny<0||ny>=rows) return; if(map[ny][nx]==1) return;
+  targetPos={x:nx,y:ny}; animating=true;
+}
+function stopMove(){ moveDir=null; if(moveInterval) clearInterval(moveInterval); }
+
+// 检查物品
+function flashScreen(color="#ff0000"){ ctx.fillStyle=color; ctx.globalAlpha=0.3; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.globalAlpha=1; }
+function checkTile(){
+  let tile=map[Math.floor(player.y)][Math.floor(player.x)];
+  if(tile==4){ keysCollected++; map[Math.floor(player.y)][Math.floor(player.x)]=0; keyEffect={x:player.x,y:player.y,alpha:1,offset:0}; }
+  if(tile==5 && keysCollected>=keyCount) endGame("成功救出公主！");
+  if(tile==6){ flashScreen(); player.x=0; player.y=0; targetPos={x:0,y:0}; animating=false; }
+  monsters.forEach(m=>{
+    if(Math.floor(m.x)==Math.floor(player.x) && Math.floor(m.y)==Math.floor(player.y)){
+      life--; if(life<=0) endGame("被怪物抓住3次，游戏失败！");
+      else { flashScreen("orange"); player.x=0; player.y=0; targetPos={x:0,y:0}; animating=false; }
+    }
+  });
+}
+
+// 怪物移动
+function moveMonsters(){ if(gameOver) return;
+  monsters.forEach(m=>{
+    let dx=player.x-m.x, dy=player.y-m.y;
+    if(Math.abs(dx)+Math.abs(dy)<=6){
+      if(Math.abs(dx)>Math.abs(dy) && map[m.y][m.x+Math.sign(dx)]!=1) m.x+=Math.sign(dx);
+      else if(map[m.y+Math.sign(dy)] && map[m.y+Math.sign(dy)][m.x]!=1) m.y+=Math.sign(dy);
+    } else {
+      let rx=Math.round(Math.random()*2-1), ry=Math.round(Math.random()*2-1);
+      if(map[m.y][m.x+rx]!=1 && m.x+rx>=0 && m.x+rx<cols) m.x+=rx;
+      if(map[m.y+ry] && map[m.y+ry][m.x]!=1 && m.y+ry>=0 && m.y+ry<rows) m.y+=ry;
+    }
+  });
+}
+
+// 游戏结束
+function endGame(msg){ gameOver=true;
+  document.getElementById('endMessage').innerText=msg;
+  document.getElementById('endScreen').style.display='flex';
+  canvas.style.display='none'; document.getElementById('controls').style.display='none';
+  document.getElementById('progressContainer').style.display='none';
+  if(trapInterval) clearInterval(trapInterval);
+}
+
+// 开始/重玩
+function startGame(){ document.getElementById('startScreen').style.opacity=0;
+  setTimeout(()=>{ document.getElementById('startScreen').style.display='none'; },500);
+  document.getElementById('endScreen').style.display='none';
+  canvas.style.display='block'; document.getElementById('controls').style.display='flex';
+  document.getElementById('progressContainer').style.display='block';
+  initGame(); requestAnimationFrame(draw);
+}
+function restartGame(){ startGame(); }
+
+// 键盘
+document.addEventListener('keydown',e=>{
+  if(e.key==="ArrowUp") move("up",true);
+  if(e.key==="ArrowDown") move("down",true);
+  if(e.key==="ArrowLeft") move("left",true);
+  if(e.key==="ArrowRight") move("right",true);
+});
+document.addEventListener('keyup', stopMove);
+
+// 怪物移动定时
+setInterval(moveMonsters,800);
 </script>
 
 </body>
